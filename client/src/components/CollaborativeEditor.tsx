@@ -16,12 +16,15 @@ export default function CollaborativeEditor({ user }: CollaborativeEditorProps) 
   const [isConnected, setIsConnected] = useState(false);
   const [showUsers, setShowUsers] = useState(true);
   const [socketId, setSocketId] = useState<string>('');
+  const [typingUsers, setTypingUsers] = useState<Map<string, { username: string; color: string }>>(new Map());
   
   const socketRef = useRef<Socket | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastChangeRef = useRef<string>('');
   const changeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isLocalChangeRef = useRef(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isTypingRef = useRef(false);
 
   useEffect(() => {
     // Connect to server
@@ -117,6 +120,32 @@ export default function CollaborativeEditor({ user }: CollaborativeEditorProps) 
         newMap.delete(userId);
         return newMap;
       });
+      setTypingUsers(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(userId);
+        return newMap;
+      });
+    });
+
+    // Typing indicators
+    socket.on('user-typing', ({ userId, username, color }) => {
+      if (userId !== socket.id) {
+        setTypingUsers(prev => {
+          const newMap = new Map(prev);
+          newMap.set(userId, { username, color });
+          return newMap;
+        });
+      }
+    });
+
+    socket.on('user-stopped-typing', ({ userId }) => {
+      if (userId !== socket.id) {
+        setTypingUsers(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(userId);
+          return newMap;
+        });
+      }
     });
 
     return () => {
@@ -128,6 +157,29 @@ export default function CollaborativeEditor({ user }: CollaborativeEditorProps) 
     const newContent = e.target.value;
     setContent(newContent);
     isLocalChangeRef.current = true;
+
+    // Emit typing start
+    if (!isTypingRef.current && socketRef.current) {
+      isTypingRef.current = true;
+      socketRef.current.emit('typing-start', {
+        documentId: 'default'
+      });
+    }
+
+    // Clear typing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set typing stop timeout (after 2 seconds of no typing)
+    typingTimeoutRef.current = setTimeout(() => {
+      if (socketRef.current && isTypingRef.current) {
+        isTypingRef.current = false;
+        socketRef.current.emit('typing-stop', {
+          documentId: 'default'
+        });
+      }
+    }, 2000);
 
     // Debounce changes
     if (changeTimeoutRef.current) {
@@ -231,9 +283,42 @@ export default function CollaborativeEditor({ user }: CollaborativeEditorProps) 
               <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-lg font-semibold text-gray-800">Document</h2>
-                  <span className="text-sm text-gray-500">
-                    {content.length} characters • {content.split('\n').length} lines
-                  </span>
+                  <div className="flex items-center gap-4">
+                    {/* Typing Indicators - Stamp Style */}
+                    {typingUsers.size > 0 && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-white/90 backdrop-blur-sm rounded-full border border-gray-200 shadow-sm">
+                        <div className="flex -space-x-2">
+                          {Array.from(typingUsers.values()).slice(0, 3).map((user, idx) => (
+                            <div
+                              key={idx}
+                              className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white shadow-sm"
+                              style={{ backgroundColor: user.color }}
+                              title={user.username}
+                            >
+                              {user.username.charAt(0).toUpperCase()}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-gray-700">
+                            {typingUsers.size === 1
+                              ? `${Array.from(typingUsers.values())[0].username} is typing`
+                              : typingUsers.size === 2
+                              ? `${Array.from(typingUsers.values())[0].username} and ${Array.from(typingUsers.values())[1].username} are typing`
+                              : `${Array.from(typingUsers.values())[0].username} and ${typingUsers.size - 1} others are typing`}
+                          </span>
+                          <span className="flex gap-0.5">
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                            <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <span className="text-sm text-gray-500">
+                      {content.length} characters • {content.split('\n').length} lines
+                    </span>
+                  </div>
                 </div>
               </div>
               

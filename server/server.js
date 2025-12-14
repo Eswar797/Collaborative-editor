@@ -138,6 +138,27 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Typing indicators
+  socket.on('typing-start', ({ documentId }) => {
+    const user = users.get(socket.id);
+    if (user && user.documentId === documentId) {
+      socket.to(documentId).emit('user-typing', {
+        userId: socket.id,
+        username: user.username,
+        color: user.color
+      });
+    }
+  });
+
+  socket.on('typing-stop', ({ documentId }) => {
+    const user = users.get(socket.id);
+    if (user && user.documentId === documentId) {
+      socket.to(documentId).emit('user-stopped-typing', {
+        userId: socket.id
+      });
+    }
+  });
+
 
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
