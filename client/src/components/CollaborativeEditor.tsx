@@ -26,7 +26,14 @@ export default function CollaborativeEditor({ user }: CollaborativeEditorProps) 
   useEffect(() => {
     // Connect to server
     const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
-    const socket = io(serverUrl);
+    const socket = io(serverUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: Infinity,
+      timeout: 20000,
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
@@ -39,7 +46,33 @@ export default function CollaborativeEditor({ user }: CollaborativeEditorProps) 
       });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      console.log('Disconnected:', reason);
+      setIsConnected(false);
+      // Auto-reconnect is handled by socket.io
+    });
+
+    socket.on('reconnect', (attemptNumber) => {
+      console.log('Reconnected after', attemptNumber, 'attempts');
+      setIsConnected(true);
+      // Rejoin document after reconnection
+      socket.emit('join-document', {
+        documentId: 'default',
+        username: user.username,
+        color: user.color
+      });
+    });
+
+    socket.on('reconnect_attempt', () => {
+      console.log('Attempting to reconnect...');
+    });
+
+    socket.on('reconnect_error', (error) => {
+      console.error('Reconnection error:', error);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Connection error:', error);
       setIsConnected(false);
     });
 

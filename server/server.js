@@ -10,8 +10,12 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: process.env.CLIENT_URL || "http://localhost:5173",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 app.use(cors());
@@ -22,13 +26,23 @@ app.get('/favicon.ico', (req, res) => {
   res.status(204).end();
 });
 
+// Health check endpoint (prevents Render from spinning down)
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // Handle root requests
 app.get('/', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'Collaborative Editor Server',
     endpoints: {
-      socket: 'Socket.io connection available'
+      socket: 'Socket.io connection available',
+      health: '/health'
     }
   });
 });
